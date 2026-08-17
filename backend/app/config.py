@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -23,9 +25,19 @@ def _normalize_database_urls(async_url: str, sync_url: str) -> tuple[str, str]:
     return async_url, sync_url
 
 
+def _default_sqlite_urls() -> tuple[str, str]:
+    """Serverless (Vercel) has no writable project dir — use /tmp."""
+    if os.getenv("VERCEL"):
+        return "sqlite+aiosqlite:////tmp/bulkyy.db", "sqlite:////tmp/bulkyy.db"
+    return "sqlite+aiosqlite:///./bulkyy.db", "sqlite:///./bulkyy.db"
+
+
+_DEFAULT_DB_ASYNC, _DEFAULT_DB_SYNC = _default_sqlite_urls()
+
+
 class Settings(BaseSettings):
-    database_url: str = "sqlite+aiosqlite:///./bulkyy.db"
-    database_url_sync: str = "sqlite:///./bulkyy.db"
+    database_url: str = _DEFAULT_DB_ASYNC
+    database_url_sync: str = _DEFAULT_DB_SYNC
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
@@ -42,7 +54,19 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origins = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        for key in ("VERCEL_URL", "VERCEL_BRANCH_URL"):
+            host = os.getenv(key, "").strip()
+            if host:
+                origins.append(f"https://{host}")
+        # de-dupe while preserving order
+        seen: set[str] = set()
+        unique: list[str] = []
+        for origin in origins:
+            if origin not in seen:
+                seen.add(origin)
+                unique.append(origin)
+        return unique
 
     @property
     def delay_list(self) -> list[int]:

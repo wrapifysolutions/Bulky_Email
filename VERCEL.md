@@ -39,8 +39,8 @@ pip install -r requirements-full.txt
 | `DATABASE_URL` | `postgresql+asyncpg://user:pass@host/db` | Required |
 | `DATABASE_URL_SYNC` | `postgresql://user:pass@host/db` | Required for Celery (optional on Vercel) |
 | `SECRET_KEY` | long random string | |
-| `CORS_ORIGINS` | `https://your-app.vercel.app` | Your Vercel URL |
-| `NEXT_PUBLIC_API_URL` | *(leave empty)* | Same-origin — frontend calls `/api/...` on your domain |
+| `CORS_ORIGINS` | `https://your-app.vercel.app` | Optional if using same-origin; auto-added from `VERCEL_URL` |
+| `NEXT_PUBLIC_API_URL` | *(delete this var on Vercel)* | Leave unset — browser uses same domain `/api/...` |
 
 5. Click **Deploy**.
 

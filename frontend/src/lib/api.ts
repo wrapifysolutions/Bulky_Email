@@ -1,15 +1,35 @@
-/** Same-origin on Vercel; local dev defaults to backend on :8000 */
+/** Resolve API base URL at request time (fixes Vercel prod calling localhost). */
 function getApiUrl(): string {
-  if (process.env.NEXT_PUBLIC_API_URL !== undefined) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
-  }
-  if (process.env.VERCEL) {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const isLocalhostUrl =
+    !!configured &&
+    (configured.includes("127.0.0.1") || configured.includes("localhost"));
+
+  // In the browser on a deployed site, always use same-origin unless a real remote API is set.
+  if (typeof window !== "undefined") {
+    const onLocalDev =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    if (onLocalDev) {
+      return configured && !isLocalhostUrl
+        ? configured.replace(/\/$/, "")
+        : "http://127.0.0.1:8000";
+    }
+    if (configured && !isLocalhostUrl) {
+      return configured.replace(/\/$/, "");
+    }
     return "";
+  }
+
+  // Server-side (SSR/build)
+  if (configured && !isLocalhostUrl) {
+    return configured.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
   }
   return "http://127.0.0.1:8000";
 }
-
-const API_URL = getApiUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
@@ -17,7 +37,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json; charset=utf-8");
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers,
   });
@@ -156,7 +176,7 @@ export const api = {
     upload: async (file: File) => {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${API_URL}/api/leads/upload`, { method: "POST", body: form });
+      const res = await fetch(`${getApiUrl()}/api/leads/upload`, { method: "POST", body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         const detail = err.detail;
