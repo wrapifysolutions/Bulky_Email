@@ -1,4 +1,15 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+/** Same-origin on Vercel; local dev defaults to backend on :8000 */
+function getApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL !== undefined) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL) {
+    return "";
+  }
+  return "http://127.0.0.1:8000";
+}
+
+const API_URL = getApiUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
