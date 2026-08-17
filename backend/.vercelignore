@@ -1,0 +1,10 @@
+.venv
+.venv311
+.venv_local
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.db
+uploads/**
+campaigns.json
+.git

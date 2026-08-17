@@ -9,6 +9,16 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "main:app",
+      "installCommand": "pip install --no-cache-dir -r requirements-vercel.txt",
+      "excludeFiles": [
+        ".venv/**",
+        ".venv311/**",
+        ".venv_local/**",
+        "**/__pycache__/**",
+        "uploads/**",
+        "*.db",
+        "campaigns.json"
+      ],
       "functions": {
         "main.py": {
           "maxDuration": 60

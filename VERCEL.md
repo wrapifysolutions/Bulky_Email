@@ -2,7 +2,15 @@
 
 This repo is configured for **one Vercel project** with two services (Next.js + FastAPI) via root `vercel.json`.
 
-## Before you deploy
+## Bundle size (500 MB limit)
+
+Vercel uses `backend/requirements-vercel.txt` (not full `requirements.txt`) to stay under the function size cap. Removed from Vercel build:
+
+- **Playwright** (~300 MB, unused — crawler uses httpx + BeautifulSoup)
+- **Celery / Redis** (not used on serverless)
+- **uvicorn, aiosqlite, alembic, lxml, auth libs** (unused at runtime)
+
+Local/Docker still use full `requirements.txt`.
 
 1. Push the repo to **GitHub**.
 2. Use **Postgres** in production (SQLite does not persist on Vercel). Options:
