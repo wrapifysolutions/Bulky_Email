@@ -22,7 +22,23 @@ def _normalize_database_urls(async_url: str, sync_url: str) -> tuple[str, str]:
     elif async_url.startswith("postgresql+asyncpg://") and sync_url.startswith("sqlite"):
         sync_url = async_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
+    async_url = _ensure_postgres_ssl(async_url)
+    sync_url = _ensure_postgres_ssl(sync_url, for_asyncpg=False)
+
     return async_url, sync_url
+
+
+def _ensure_postgres_ssl(url: str, *, for_asyncpg: bool = True) -> str:
+    """Neon/Vercel Postgres require TLS; asyncpg uses ?ssl=require."""
+    if not url.startswith("postgresql"):
+        return url
+    lower = url.lower()
+    if "ssl=" in lower or "sslmode=" in lower:
+        return url
+    sep = "&" if "?" in url else "?"
+    if for_asyncpg and "+asyncpg" in url:
+        return f"{url}{sep}ssl=require"
+    return f"{url}{sep}sslmode=require"
 
 
 def _default_sqlite_urls() -> tuple[str, str]:
@@ -45,9 +61,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     default_daily_limit: int = 15
     send_delays: str = "30,60,90,120"
-    upload_dir: str = "uploads"
+    upload_dir: str = "/tmp/uploads" if os.getenv("VERCEL") else "uploads"
 
     def model_post_init(self, __context) -> None:
+        if not self.database_url.strip():
+            self.database_url = _DEFAULT_DB_ASYNC
+        if not self.database_url_sync.strip():
+            self.database_url_sync = _DEFAULT_DB_SYNC
         self.database_url, self.database_url_sync = _normalize_database_urls(
             self.database_url, self.database_url_sync
         )

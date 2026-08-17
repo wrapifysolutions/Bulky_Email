@@ -1,3 +1,5 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,14 +9,24 @@ from app.api import campaigns, dashboard, leads, mailboxes, templates
 from app.config import settings
 from app.database import Base, engine
 
+logger = logging.getLogger("bulkyy")
+_startup_error: str | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_ensure_mailbox_quota_column)
-    await _remove_dummy_mailboxes()
-    await _reconcile_campaigns_on_boot()
+    global _startup_error
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(_ensure_mailbox_quota_column)
+        await _remove_dummy_mailboxes()
+        # Background campaign workers are not reliable on Vercel serverless.
+        if not os.getenv("VERCEL"):
+            await _reconcile_campaigns_on_boot()
+    except Exception as exc:
+        _startup_error = str(exc)
+        logger.exception("Startup initialization failed")
     yield
     await engine.dispose()
 
@@ -88,4 +100,10 @@ app.include_router(campaigns.router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    if _startup_error:
+        return {
+            "status": "degraded",
+            "database": "error",
+            "detail": _startup_error,
+        }
+    return {"status": "ok", "database": "connected"}

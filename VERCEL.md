@@ -30,8 +30,8 @@ pip install -r requirements-full.txt
 ## Deploy steps
 
 1. Go to [vercel.com](https://vercel.com) → **Add New Project** → import your GitHub repo.
-2. **Root directory:** leave as `.` (repo root — not `frontend`).
-3. **Framework preset:** choose **Other** or **Services** if shown (project must read `vercel.json` services).
+2. **Root directory:** leave as `.` (repo root — **not** `frontend`).
+3. **Framework preset:** set to **Services** in Build & Deployment settings (required for `services` in `vercel.json`).
 4. Add **Environment variables** (Production + Preview):
 
 | Variable | Example | Notes |
@@ -78,6 +78,7 @@ For heavy production sending, keep backend on Render/Railway and frontend-only o
 
 ## Troubleshooting
 
+- **Dashboard "Request failed" / backend 500:** Open `/health` — if `database: error`, fix `DATABASE_URL` (Neon/Postgres with TLS). Ensure Framework = **Services** and root = `.`.
 - **502 on `/api/*`:** Check `DATABASE_URL` and Vercel function logs.
 - **CORS errors:** Set `CORS_ORIGINS` to your exact Vercel URL (https, no trailing slash).
 - **Frontend calls wrong host:** Leave `NEXT_PUBLIC_API_URL` empty on Vercel.
