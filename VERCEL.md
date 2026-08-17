@@ -4,12 +4,19 @@ This repo is configured for **one Vercel project** with two services (Next.js + 
 
 ## Bundle size (225 MB limit on Hobby)
 
-Vercel installs `backend/requirements.txt` automatically (no custom install command).
+**Do not commit virtualenvs** — `backend/.venv_local` was accidentally in git (~290 MB) and caused deploy failures. It is now in `.gitignore`. If deploy still fails, run:
 
-- **Removed:** pandas, Playwright, Celery, Redis, uvicorn, and other heavy/unused packages
-- **CSV/Excel:** handled with Python `csv` + `openpyxl` (no pandas)
+```bash
+git rm -r --cached backend/.venv_local
+git rm --cached backend/bulkyy.db backend/campaigns.json
+```
 
-Local / Docker / Render use the full stack:
+Vercel installs slim `backend/requirements.txt` automatically (~53 MB with deps).
+
+- **Removed from Vercel deps:** pandas, Playwright, Celery, Redis, uvicorn, etc.
+- **CSV/Excel:** Python `csv` + `openpyxl` (no pandas)
+
+Local / Docker / Render:
 
 ```bash
 pip install -r requirements-full.txt

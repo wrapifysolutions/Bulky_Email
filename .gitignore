@@ -20,8 +20,10 @@ dist/
 build/
 *.egg-info/
 
-# Uploads
+# Uploads / local data
 uploads/
+*.db
+campaigns.json
 
 # IDE
 .idea/

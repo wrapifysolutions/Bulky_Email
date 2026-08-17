@@ -1,0 +1,10 @@
+backend/.venv
+backend/.venv311
+backend/.venv_local
+backend/**/__pycache__
+backend/**/*.pyc
+backend/**/*.db
+backend/uploads
+backend/campaigns.json
+frontend/node_modules
+frontend/.next
