@@ -2,6 +2,7 @@
 node_modules/
 .venv/
 .venv311/
+.venv_local/
 venv/
 __pycache__/
 *.pyc

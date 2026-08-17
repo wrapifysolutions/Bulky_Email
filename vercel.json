@@ -9,7 +9,6 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "main:app",
-      "installCommand": "pip install --no-cache-dir -r requirements-vercel.txt",
       "functions": {
         "main.py": {
           "maxDuration": 60

@@ -49,7 +49,7 @@ docker compose up --build
 cd backend
 py -3.11 -m venv .venv311
 .venv311\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-full.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 

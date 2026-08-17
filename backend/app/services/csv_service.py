@@ -1,10 +1,13 @@
+import csv
+import math
 import os
 import re
 import uuid
-from io import BytesIO
+from io import BytesIO, StringIO
+from typing import Any
 
-import pandas as pd
 from email_validator import EmailNotValidError, validate_email
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,32 +65,79 @@ COLUMN_MAP = {
 }
 
 
-def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    cleaned = []
-    for c in df.columns:
-        name = str(c).replace("\ufeff", "").strip().lower()
-        name = re.sub(r"\s+", " ", name)
-        cleaned.append(name)
-    df = df.copy()
-    df.columns = cleaned
-    rename = {col: COLUMN_MAP[col] for col in df.columns if col in COLUMN_MAP}
-    return df.rename(columns=rename)
+def _clean_header(name: Any) -> str:
+    text = str(name or "").replace("\ufeff", "").strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    return COLUMN_MAP.get(text, text)
 
 
-def _read_tabular(file_content: bytes, original_filename: str) -> pd.DataFrame:
+def _decode_csv_text(file_content: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return file_content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return file_content.decode("utf-8", errors="replace")
+
+
+def _read_csv_rows(file_content: bytes) -> list[dict[str, Any]]:
+    text = _decode_csv_text(file_content)
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    reader = csv.reader(StringIO(text), dialect)
+    try:
+        raw_headers = next(reader)
+    except StopIteration:
+        return []
+
+    headers = [_clean_header(h) for h in raw_headers]
+    rows: list[dict[str, Any]] = []
+    for values in reader:
+        if not any(str(v or "").strip() for v in values):
+            continue
+        row: dict[str, Any] = {}
+        for i, header in enumerate(headers):
+            if not header:
+                continue
+            row[header] = values[i] if i < len(values) else None
+        rows.append(row)
+    return rows
+
+
+def _read_excel_rows(file_content: bytes) -> list[dict[str, Any]]:
+    wb = load_workbook(BytesIO(file_content), read_only=True, data_only=True)
+    ws = wb.active
+    row_iter = ws.iter_rows(values_only=True)
+    try:
+        raw_headers = next(row_iter)
+    except StopIteration:
+        return []
+
+    headers = [_clean_header(h) for h in raw_headers]
+    rows: list[dict[str, Any]] = []
+    for values in row_iter:
+        if not any(str(v or "").strip() for v in values):
+            continue
+        row: dict[str, Any] = {}
+        for i, header in enumerate(headers):
+            if not header:
+                continue
+            row[header] = values[i] if i < len(values) else None
+        rows.append(row)
+    return rows
+
+
+def _read_tabular(file_content: bytes, original_filename: str) -> list[dict[str, Any]]:
     lower = original_filename.lower()
     if lower.endswith((".xlsx", ".xls")):
-        return pd.read_excel(BytesIO(file_content))
-
-    try:
-        return pd.read_csv(
-            BytesIO(file_content),
-            encoding="utf-8-sig",
-            sep=None,
-            engine="python",
-        )
-    except Exception:
-        return pd.read_csv(BytesIO(file_content), encoding="latin-1")
+        if lower.endswith(".xls"):
+            raise ValueError("Legacy .xls files are not supported — save as .xlsx")
+        return _read_excel_rows(file_content)
+    return _read_csv_rows(file_content)
 
 
 def _validate_email_address(email: str) -> bool:
@@ -98,13 +148,12 @@ def _validate_email_address(email: str) -> bool:
         return False
 
 
-def _extract_email_from_row(row: pd.Series) -> str | None:
-    """Prefer dedicated email column, else scan every cell for an email address."""
-    direct = _safe_str(row.get("email") if "email" in row.index else None)
+def _extract_email_from_row(row: dict[str, Any]) -> str | None:
+    direct = _safe_str(row.get("email"))
     if direct and _validate_email_address(direct.lower()):
         return direct.lower()
 
-    for value in row.values:
+    for value in row.values():
         text = _safe_str(value)
         if not text:
             continue
@@ -148,37 +197,36 @@ async def process_csv_upload(
     with open(filepath, "wb") as f:
         f.write(file_content)
 
-    df = _normalize_columns(_read_tabular(file_content, original_filename))
+    rows = _read_tabular(file_content, original_filename)
 
-    if df.empty:
+    if not rows:
         raise ValueError("File is empty — no rows to import")
 
     upload = CsvUpload(
         filename=stored_name,
         original_filename=original_filename,
-        total_rows=len(df),
+        total_rows=len(rows),
     )
     db.add(upload)
     await db.flush()
 
     valid = duplicate = invalid = 0
 
-    for _, row in df.iterrows():
+    for row in rows:
         email_raw = _extract_email_from_row(row)
-        phone = _safe_str(row.get("phone") if "phone" in row.index else None)
-        company = _safe_str(row.get("company") if "company" in row.index else None)
-        industry = _safe_str(row.get("industry") if "industry" in row.index else None)
-        country = _safe_str(row.get("country") if "country" in row.index else None)
-        first_name = _safe_str(row.get("first_name") if "first_name" in row.index else None)
-        last_name = _safe_str(row.get("last_name") if "last_name" in row.index else None)
-        website = _safe_str(row.get("website") if "website" in row.index else None)
-        source_url = _safe_str(row.get("source_url") if "source_url" in row.index else None)
-        address = _safe_str(row.get("address") if "address" in row.index else None)
+        phone = _safe_str(row.get("phone"))
+        company = _safe_str(row.get("company"))
+        industry = _safe_str(row.get("industry"))
+        country = _safe_str(row.get("country"))
+        first_name = _safe_str(row.get("first_name"))
+        last_name = _safe_str(row.get("last_name"))
+        website = _safe_str(row.get("website"))
+        source_url = _safe_str(row.get("source_url"))
+        address = _safe_str(row.get("address"))
 
         if not company and industry:
             company = industry
 
-        # Skip completely empty rows
         if not email_raw and not phone and not company and not first_name:
             invalid += 1
             continue
@@ -193,7 +241,6 @@ async def process_csv_upload(
                 continue
             status = LeadStatus.VALID
         else:
-            # Phone / contact without email — still import, not usable for sending yet
             if phone:
                 existing_phone = await _lead_exists_by_phone(db, phone)
                 if existing_phone:
@@ -231,11 +278,20 @@ async def process_csv_upload(
     return upload
 
 
-def _safe_str(value) -> str | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+def _safe_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
         return None
     s = str(value).strip()
-    return s if s and s != "nan" else None
+    return s if s and s.lower() != "nan" else None
+
+
+def _workbook_to_bytes(wb: Workbook) -> bytes:
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.read()
 
 
 async def export_leads_to_excel(db: AsyncSession, lead_ids: list[int] | None = None) -> bytes:
@@ -245,26 +301,37 @@ async def export_leads_to_excel(db: AsyncSession, lead_ids: list[int] | None = N
     result = await db.execute(query)
     leads = result.scalars().all()
 
-    data = [
-        {
-            "Company": l.company,
-            "Email": l.email,
-            "First Name": l.first_name,
-            "Last Name": l.last_name,
-            "Website": l.website,
-            "Phone": l.phone,
-            "Country": l.country,
-            "Status": l.status.value,
-            "Created": l.created_at,
-        }
-        for l in leads
-    ]
-    df = pd.DataFrame(data)
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Prospects", index=False)
-    buffer.seek(0)
-    return buffer.read()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Prospects"
+    ws.append(
+        [
+            "Company",
+            "Email",
+            "First Name",
+            "Last Name",
+            "Website",
+            "Phone",
+            "Country",
+            "Status",
+            "Created",
+        ]
+    )
+    for lead in leads:
+        ws.append(
+            [
+                lead.company,
+                lead.email,
+                lead.first_name,
+                lead.last_name,
+                lead.website,
+                lead.phone,
+                lead.country,
+                lead.status.value if lead.status else None,
+                lead.created_at,
+            ]
+        )
+    return _workbook_to_bytes(wb)
 
 
 async def export_sent_leads(db: AsyncSession, campaign_id: int | None = None) -> bytes:
@@ -274,19 +341,10 @@ async def export_sent_leads(db: AsyncSession, campaign_id: int | None = None) ->
     result = await db.execute(query)
     sent = result.scalars().all()
 
-    data = [
-        {
-            "Company": s.company,
-            "Email": s.email,
-            "Sent Date": s.sent_at,
-            "Campaign ID": s.campaign_id,
-            "Mailbox ID": s.mailbox_id,
-        }
-        for s in sent
-    ]
-    df = pd.DataFrame(data)
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Sent Successfully", index=False)
-    buffer.seek(0)
-    return buffer.read()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sent Successfully"
+    ws.append(["Company", "Email", "Sent Date", "Campaign ID", "Mailbox ID"])
+    for row in sent:
+        ws.append([row.company, row.email, row.sent_at, row.campaign_id, row.mailbox_id])
+    return _workbook_to_bytes(wb)

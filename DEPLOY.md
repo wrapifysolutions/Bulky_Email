@@ -17,7 +17,7 @@ Recommended free stack:
    **or** **Web Service** manually:
    - Root directory: `backend`
    - Runtime: Python 3.12
-   - Build: `pip install -r requirements.txt`
+   - Build: `pip install -r requirements-full.txt`
    - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 3. Add a **Postgres** database (free) and set env vars:
 
